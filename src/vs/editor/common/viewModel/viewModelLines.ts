@@ -124,7 +124,7 @@ export class ViewModelLinesFromProjectedModel implements IViewModelLines {
 		}
 
 		const linesContent = this.model.getLinesContent();
-		const injectedTextDecorations = this.model.getInjectedTextDecorations(this._editorId);
+		const injectedTextDecorations = this.model.getAllTextDecorations(this._editorId);
 		const lineCount = linesContent.length;
 		const lineBreaksComputer = this.createLineBreaksComputer();
 
@@ -133,7 +133,7 @@ export class ViewModelLinesFromProjectedModel implements IViewModelLines {
 			const lineInjectedText = injectedTextQueue.takeWhile(t => t.lineNumber === i + 1);
 			lineBreaksComputer.addRequest(linesContent[i], lineInjectedText, previousLineBreaks ? previousLineBreaks[i] : null);
 		}
-		const linesBreaks = lineBreaksComputer.finalize();
+		const linesBreaks = lineBreaksComputer.finalize(injectedTextDecorations);
 
 		const values: number[] = [];
 

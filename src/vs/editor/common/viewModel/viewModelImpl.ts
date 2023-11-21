@@ -314,7 +314,7 @@ export class ViewModel extends Disposable implements IViewModel {
 						}
 					}
 				}
-				const lineBreaks = lineBreaksComputer.finalize();
+				const lineBreaks = lineBreaksComputer.finalize(this.model.getAllTextDecorations());
 				const lineBreakQueue = new ArrayQueue(lineBreaks);
 
 				for (const change of changes) {
