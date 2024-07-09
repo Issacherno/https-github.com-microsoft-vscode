@@ -35,9 +35,18 @@ if [ "@@NAME@@" != "code-oss" ]; then
 	eval $(apt-config shell APT_TRUSTED_PARTS Dir::Etc::trustedparts/d)
 	CODE_TRUSTED_PART=${APT_TRUSTED_PARTS}microsoft.gpg
 
+	. /usr/share/debconf/confmodule
+	db_get @@NAME@@/add-microsoft-repo || true
+
 	# Install repository source list
 	WRITE_SOURCE=0
-	if [ ! -f $CODE_SOURCE_PART ] && [ ! -f /etc/rpi-issue ]; then
+	if apt-cache policy | grep -Eq "https:\/\/packages\.microsoft\.com\/repos\/code"; then
+		# Skip following checks if the repo is already known to apt
+		WRITE_SOURCE=0
+	elif [ "$RET" = false ]; then
+		# The user does not want to add the microsoft repository
+		WRITE_SOURCE=0
+	elif [ ! -f $CODE_SOURCE_PART ] && [ ! -f /etc/rpi-issue ]; then
 		# Write source list if it does not exist and we're not running on Raspberry Pi OS
 		WRITE_SOURCE=1
 	elif grep -Eq "http:\/\/packages\.microsoft\.com\/repos\/vscode" $CODE_SOURCE_PART; then
@@ -46,6 +55,17 @@ if [ "@@NAME@@" != "code-oss" ]; then
 	elif grep -q "# disabled on upgrade to" $CODE_SOURCE_PART; then
 		# Write source list if it was disabled by OS upgrade
 		WRITE_SOURCE=1
+	fi
+
+	if [ "$WRITE_SOURCE" -eq "1" ]; then
+		# Ask the user what to do
+		db_input high @@NAME@@/add-microsoft-repo || true
+		db_go || true
+
+		db_get @@NAME@@/add-microsoft-repo
+		if [ "$RET" = false ]; then
+			WRITE_SOURCE=0
+		fi
 	fi
 
 	if [ "$WRITE_SOURCE" -eq "1" ]; then
