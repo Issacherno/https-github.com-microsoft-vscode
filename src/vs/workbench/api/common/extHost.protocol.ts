@@ -83,6 +83,7 @@ import * as search from 'vs/workbench/services/search/common/search';
 import { ISaveProfileResult } from 'vs/workbench/services/userDataProfile/common/userDataProfile';
 import type { TerminalShellExecutionCommandLineConfidence } from 'vscode';
 import { AuthInfo, Credentials } from 'vs/platform/request/common/request';
+import { IChatCustomInstruction } from 'vs/workbench/contrib/chat/common/chatCustomInstructionsService';
 
 export interface IWorkspaceData extends IStaticWorkspaceData {
 	folders: { uri: UriComponents; name: string; index: number }[];
@@ -1302,11 +1303,22 @@ export interface MainThreadLanguageModelToolsShape extends IDisposable {
 	$unregisterTool(name: string): void;
 }
 
+export interface MainThreadChatCustomInstructionsShape extends IDisposable {
+	$registerProvider(handle: number): void;
+	$unregisterProvider(handle: number): void;
+}
+
 export type IChatRequestVariableValueDto = Dto<IChatRequestVariableValue>;
 
 export interface ExtHostChatVariablesShape {
 	$resolveVariable(handle: number, requestId: string, messageText: string, token: CancellationToken): Promise<IChatRequestVariableValueDto | undefined>;
 }
+
+export interface ExtHostChatCustomInstructionsShape {
+	$provideCustomInstructions(handle: number, token: CancellationToken): Promise<IChatCustomInstructionDto[] | undefined>;
+}
+
+export type IChatCustomInstructionDto = Dto<IChatCustomInstruction>;
 
 export interface ExtHostLanguageModelToolsShape {
 	$acceptToolDelta(delta: IToolDelta): Promise<void>;
@@ -2843,6 +2855,7 @@ export const MainContext = {
 	MainThreadEmbeddings: createProxyIdentifier<MainThreadEmbeddingsShape>('MainThreadEmbeddings'),
 	MainThreadChatAgents2: createProxyIdentifier<MainThreadChatAgentsShape2>('MainThreadChatAgents2'),
 	MainThreadChatVariables: createProxyIdentifier<MainThreadChatVariablesShape>('MainThreadChatVariables'),
+	MainThreadChatCustomInstructions: createProxyIdentifier<MainThreadChatCustomInstructionsShape>('MainThreadChatCustomInstructions'),
 	MainThreadLanguageModelTools: createProxyIdentifier<MainThreadLanguageModelToolsShape>('MainThreadChatSkills'),
 	MainThreadClipboard: createProxyIdentifier<MainThreadClipboardShape>('MainThreadClipboard'),
 	MainThreadCommands: createProxyIdentifier<MainThreadCommandsShape>('MainThreadCommands'),
@@ -2963,6 +2976,7 @@ export const ExtHostContext = {
 	ExtHostInteractive: createProxyIdentifier<ExtHostInteractiveShape>('ExtHostInteractive'),
 	ExtHostChatAgents2: createProxyIdentifier<ExtHostChatAgentsShape2>('ExtHostChatAgents'),
 	ExtHostChatVariables: createProxyIdentifier<ExtHostChatVariablesShape>('ExtHostChatVariables'),
+	ExtHostChatCustomInstructions: createProxyIdentifier<ExtHostChatCustomInstructionsShape>('ExtHostChatCustomInstructions'),
 	ExtHostLanguageModelTools: createProxyIdentifier<ExtHostLanguageModelToolsShape>('ExtHostChatSkills'),
 	ExtHostChatProvider: createProxyIdentifier<ExtHostLanguageModelsShape>('ExtHostChatProvider'),
 	ExtHostSpeech: createProxyIdentifier<ExtHostSpeechShape>('ExtHostSpeech'),
