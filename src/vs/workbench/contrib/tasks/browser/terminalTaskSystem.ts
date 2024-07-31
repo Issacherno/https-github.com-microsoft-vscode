@@ -521,12 +521,17 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 							if (!taskResult) {
 								const activeTask = this._activeTasks[dependencyTask.getMapKey()] ?? this._getInstances(dependencyTask).pop();
 								taskResult = activeTask && this._getDependencyPromise(activeTask);
+								if (activeTask) {
+									// If the task is already running, terminate it. We will rerun it below to
+									// prevent a race condition #203776
+									this._log('terminating already active task ' + activeTask.task._label);
+									this.terminate(activeTask.task);
+									this._removeFromActiveTasks(activeTask.task);
+								}
 							}
 						}
-						if (!taskResult) {
-							this._fireTaskEvent(TaskEvent.general(TaskEventKind.DependsOnStarted, task));
-							taskResult = this._executeDependencyTask(dependencyTask, resolver, trigger, nextLiveDependencies, encounteredTasks, alreadyResolved);
-						}
+						this._fireTaskEvent(TaskEvent.general(TaskEventKind.DependsOnStarted, task));
+						taskResult = this._executeDependencyTask(dependencyTask, resolver, trigger, nextLiveDependencies, encounteredTasks, alreadyResolved);
 						encounteredTasks.set(commonKey, taskResult);
 						promises.push(taskResult);
 						if (task.configurationProperties.dependsOrder === DependsOrder.sequence) {
