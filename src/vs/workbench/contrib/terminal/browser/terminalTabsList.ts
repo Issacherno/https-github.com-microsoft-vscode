@@ -588,6 +588,7 @@ class TerminalTabsDragAndDrop extends Disposable implements IListDragAndDrop<ITe
 		@ITerminalService private readonly _terminalService: ITerminalService,
 		@ITerminalGroupService private readonly _terminalGroupService: ITerminalGroupService,
 		@IHostService private readonly _hostService: IHostService,
+		@IListService private readonly _listService: IListService,
 	) {
 		super();
 		this._primaryBackend = this._terminalService.getPrimaryBackend();
@@ -714,6 +715,11 @@ class TerminalTabsDragAndDrop extends Disposable implements IListDragAndDrop<ITe
 		if (!targetInstance) {
 			this._terminalGroupService.moveGroupToEnd(sourceInstances[0]);
 			this._terminalService.setActiveInstance(sourceInstances[0]);
+			const targetGroup = this._terminalGroupService.getGroupForInstance(sourceInstances[0]);
+			if (targetGroup) {
+				const index = this._terminalGroupService.groups.indexOf(targetGroup);
+				this._listService.lastFocusedList?.setSelection([index]);
+			}
 			return;
 		}
 
@@ -722,6 +728,11 @@ class TerminalTabsDragAndDrop extends Disposable implements IListDragAndDrop<ITe
 			this._terminalGroupService.moveGroup(instance, targetInstance);
 			if (!focused) {
 				this._terminalService.setActiveInstance(instance);
+				const targetGroup = this._terminalGroupService.getGroupForInstance(instance);
+				if (targetGroup) {
+					const index = this._terminalGroupService.groups.indexOf(targetGroup);
+					this._listService.lastFocusedList?.setSelection([index]);
+				}
 				focused = true;
 			}
 		}
