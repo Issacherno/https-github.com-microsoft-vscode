@@ -1,0 +1,7 @@
+Template: @@NAME@@/add-microsoft-repo
+Type: boolean
+Default: true
+Description: Add Microsoft repository for Visual Studio Code?
+ The installer determined that you should most likely install add the
+ Microsoft apt repository for Visual Studio Code. Do you want this to
+ be done?
