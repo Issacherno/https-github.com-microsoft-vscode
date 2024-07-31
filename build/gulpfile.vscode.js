@@ -50,6 +50,7 @@ const vscodeEntryPoints = [
 ].flat();
 
 const vscodeResources = [
+	'out-build/loader-*.mjs',
 	'out-build/nls.messages.json',
 	'out-build/nls.keys.json',
 	'out-build/vs/**/*.{svg,png,html,jpg,mp3}',
@@ -80,8 +81,6 @@ const vscodeResources = [
 // be inlined into the target window file in this order
 // and they depend on each other in this way.
 const windowBootstrapFiles = [
-	'out-build/bootstrap.js',
-	'out-build/vs/loader.js',
 	'out-build/bootstrap-window.js'
 ];
 
@@ -243,7 +242,7 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
 		}
 
 		const name = product.nameShort;
-		const packageJsonUpdates = { name, version };
+		const packageJsonUpdates = { name, version, type: 'module', main: 'out/main.js' }; // TODO@esm this should be configured in the top level package.json
 
 		// for linux url handling
 		if (platform === 'linux') {
@@ -276,7 +275,7 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
 		const jsFilter = util.filter(data => !data.isDirectory() && /\.js$/.test(data.path));
 		const root = path.resolve(path.join(__dirname, '..'));
 		const productionDependencies = getProductionDependencies(root);
-		const dependenciesSrc = productionDependencies.map(d => path.relative(root, d.path)).map(d => [`${d}/**`, `!${d}/**/{test,tests}/**`]).flat();
+		const dependenciesSrc = productionDependencies.map(d => path.relative(root, d.path)).map(d => [`${d}/**`, `!${d}/**/{test,tests}/**`, `!**/*.mk`]).flat();
 
 		const deps = gulp.src(dependenciesSrc, { base: '.', dot: true })
 			.pipe(filter(['**', `!**/${config.version}/**`, '!**/bin/darwin-arm64-87/**', '!**/package-lock.json', '!**/yarn.lock', '!**/*.js.map']))
@@ -284,18 +283,19 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
 			.pipe(util.cleanNodeModules(path.join(__dirname, `.moduleignore.${process.platform}`)))
 			.pipe(jsFilter)
 			.pipe(util.rewriteSourceMappingURL(sourceMappingURLBase))
-			.pipe(jsFilter.restore)
-			.pipe(createAsar(path.join(process.cwd(), 'node_modules'), [
-				'**/*.node',
-				'**/@vscode/ripgrep/bin/*',
-				'**/node-pty/build/Release/*',
-				'**/node-pty/lib/worker/conoutSocketWorker.js',
-				'**/node-pty/lib/shared/conout.js',
-				'**/*.wasm',
-				'**/@vscode/vsce-sign/bin/*',
-			], [
-				'**/*.mk',
-			], 'node_modules.asar'));
+			.pipe(jsFilter.restore);
+		// TODO@esm: ASAR disabled in ESM
+		// .pipe(createAsar(path.join(process.cwd(), 'node_modules'), [
+		// 	'**/*.node',
+		// 	'**/@vscode/ripgrep/bin/*',
+		// 	'**/node-pty/build/Release/*',
+		// 	'**/node-pty/lib/worker/conoutSocketWorker.js',
+		// 	'**/node-pty/lib/shared/conout.js',
+		// 	'**/*.wasm',
+		// 	'**/@vscode/vsce-sign/bin/*',
+		// ], [
+		// 	'**/*.mk',
+		// ], 'node_modules.asar'));
 
 		let all = es.merge(
 			packageJsonStream,
@@ -472,9 +472,11 @@ BUILD_TARGETS.forEach(buildTarget => {
 		gulp.task(vscodeTaskCI);
 
 		const vscodeTask = task.define(`vscode${dashed(platform)}${dashed(arch)}${dashed(minified)}`, task.series(
+			// START comment for fast bundle
 			compileBuildTask,
 			compileExtensionsBuildTask,
 			compileExtensionMediaBuildTask,
+			// END comment for fast bundle
 			minified ? minifyVSCodeTask : optimizeVSCodeTask,
 			vscodeTaskCI
 		));

@@ -28,6 +28,8 @@ import { IProductConfiguration } from 'vs/base/common/product';
 import { isString } from 'vs/base/common/types';
 import { CharCode } from 'vs/base/common/charCode';
 import { IExtensionManifest } from 'vs/platform/extensions/common/extensions';
+import { isESM } from 'vs/base/common/amd';
+import { ICSSDevelopmentService } from 'vs/platform/environment/node/cssDevService';
 
 const textMimeType: { [ext: string]: string | undefined } = {
 	'.html': 'text/html',
@@ -108,6 +110,7 @@ export class WebClientServer {
 		@ILogService private readonly _logService: ILogService,
 		@IRequestService private readonly _requestService: IRequestService,
 		@IProductService private readonly _productService: IProductService,
+		@ICSSDevelopmentService private readonly _cssDevService: ICSSDevelopmentService
 	) {
 		this._webExtensionResourceUrlTemplate = this._productService.extensionsGallery?.resourceUrlTemplate ? URI.parse(this._productService.extensionsGallery.resourceUrlTemplate) : undefined;
 
@@ -297,7 +300,7 @@ export class WebClientServer {
 
 		const resolveWorkspaceURI = (defaultLocation?: string) => defaultLocation && URI.file(path.resolve(defaultLocation)).with({ scheme: Schemas.vscodeRemote, authority: remoteAuthority });
 
-		const filePath = FileAccess.asFileUri(this._environmentService.isBuilt ? 'vs/code/browser/workbench/workbench.html' : 'vs/code/browser/workbench/workbench-dev.html').fsPath;
+		const filePath = FileAccess.asFileUri(isESM ? 'vs/code/browser/workbench/workbench-esm.html' : this._environmentService.isBuilt ? 'vs/code/browser/workbench/workbench.html' : 'vs/code/browser/workbench/workbench-dev.html').fsPath;
 		const authSessionInfo = !this._environmentService.isBuilt && this._environmentService.args['github-auth'] ? {
 			id: generateUuid(),
 			providerId: 'github',
@@ -356,6 +359,16 @@ export class WebClientServer {
 			WORKBENCH_NLS_FALLBACK_URL: `${this._staticRoute}/out/nls.messages.js`
 		};
 
+		// DEV ---------------------------------------------------------------------------------------
+		// DEV: This is for development and enables loading CSS via import-statements via import-maps.
+		// DEV: The server needs to send along all CSS modules so that the client can construct the
+		// DEV: import-map.
+		// DEV ---------------------------------------------------------------------------------------
+		if (this._cssDevService.isEnabled) {
+			const cssModules = await this._cssDevService.getCssModules();
+			values['WORKBENCH_DEV_CSS_MODULES'] = JSON.stringify(cssModules);
+		}
+
 		if (useTestResolver) {
 			const bundledExtensions: { extensionPath: string; packageJSON: IExtensionManifest }[] = [];
 			for (const extensionPath of ['vscode-test-resolver', 'github-authentication']) {
@@ -380,7 +393,7 @@ export class WebClientServer {
 			'default-src \'self\';',
 			'img-src \'self\' https: data: blob:;',
 			'media-src \'self\';',
-			`script-src 'self' 'unsafe-eval' ${WORKBENCH_NLS_BASE_URL ?? ''} ${this._getScriptCspHashes(data).join(' ')} '${webWorkerExtensionHostIframeScriptSHA}' ${useTestResolver ? '' : `http://${remoteAuthority}`};`, // the sha is the same as in src/vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html
+			`script-src 'self' 'unsafe-eval' ${WORKBENCH_NLS_BASE_URL ?? ''} blob: 'nonce-1nline-m4p' ${this._getScriptCspHashes(data).join(' ')} '${webWorkerExtensionHostIframeScriptSHA}' 'sha256-/r7rqQ+yrxt57sxLuQ6AMYcy/lUpvAIzHjIJt/OeLWU=' 'sha256-OFamA3tyjcAu68sYOODXgCBYQzkGSFLQStx0u4hWd/8=' ${useTestResolver ? '' : `http://${remoteAuthority}`};`, // the sha is the same as in src/vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html and src/vs/workbench/services/extensions/worker/webWorkerExtensionHost-esm.html
 			'child-src \'self\';',
 			`frame-src 'self' https://*.vscode-cdn.net data:;`,
 			'worker-src \'self\' data: blob:;',

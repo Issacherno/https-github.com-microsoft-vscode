@@ -271,6 +271,153 @@ function optimizeAMDTask(opts: IOptimizeAMDTaskOpts): NodeJS.ReadWriteStream {
 		}) : es.through());
 }
 
+function optimizeESMTask(opts: IOptimizeAMDTaskOpts, cjsOpts?: IOptimizeCommonJSTaskOpts): NodeJS.ReadWriteStream {
+	// 1 TODO
+	// honor IEntryPoint#prepred/append (unused?)
+
+
+	const esbuild = require('esbuild') as typeof import('esbuild');
+
+	const bundledFileHeader = opts.header || DEFAULT_FILE_HEADER;
+	const sourcemaps = require('gulp-sourcemaps') as typeof import('gulp-sourcemaps');
+
+	const resourcesStream = es.through(); // this stream will contain the resources
+	const bundlesStream = es.through(); // this stream will contain the bundled files
+	const bundleInfoStream = es.through(); // this stream will contain bundleInfo.json
+
+	const entryPoints = opts.entryPoints;
+	if (cjsOpts) {
+		cjsOpts.entryPoints.forEach(entryPoint => entryPoints.push({ name: path.parse(entryPoint).name }));
+	}
+
+	const allMentionedModules = new Set<string>();
+	for (const entryPoint of entryPoints) {
+		allMentionedModules.add(entryPoint.name);
+		entryPoint.include?.forEach(allMentionedModules.add, allMentionedModules);
+		entryPoint.exclude?.forEach(allMentionedModules.add, allMentionedModules);
+	}
+
+	// 2 TODO remove this from the bundle files
+	allMentionedModules.delete('vs/css');
+
+	const bundleAsync = async () => {
+
+		let bundleData: bundle.IBundleData | undefined;
+		const files: VinylFile[] = [];
+		const tasks: Promise<any>[] = [];
+
+		for (const module of allMentionedModules) {
+
+			const t1 = performance.now();
+			console.log(`[bundle] STARTING '${module}'...`);
+
+			const task = esbuild.build({
+				logLevel: 'silent',
+				bundle: true,
+				packages: 'external', // "external all the things", see https://esbuild.github.io/api/#packages
+				platform: 'neutral', // makes esm
+				format: 'esm',
+				target: ['es2023'],
+				loader: {
+					'.ttf': 'file',
+					'.svg': 'file',
+					'.png': 'file',
+					'.sh': 'file',
+				},
+				outdir: path.join(REPO_ROOT_PATH, opts.src, path.dirname(module)),
+				entryPoints: [path.join(REPO_ROOT_PATH, opts.src, `${module}.js`)],
+				write: false, // enables res.outputFiles
+				metafile: true, // enables res.metafile
+
+			}).then(res => {
+				console.log(`[bundle] DONE for '${module}' (${Math.round(performance.now() - t1)}ms)`);
+
+				if (opts.bundleInfo) {
+					// TODO validate that bundleData is correct
+					bundleData ??= { graph: {}, bundles: {} };
+
+					function pathToModule(path: string) {
+						return path
+							.replace(new RegExp(`^${opts.src}\\/`), '')
+							.replace(/\.js$/, '');
+					}
+
+					for (const [path, value] of Object.entries(res.metafile.outputs)) {
+						const entryModule = pathToModule(path);
+						const inputModules = Object.keys(value.inputs).map(pathToModule);
+						bundleData.bundles[entryModule] = inputModules;
+					}
+
+					for (const [input, value] of Object.entries(res.metafile.inputs)) {
+						const dependencies = value.imports.map(i => pathToModule(i.path));
+						bundleData.graph[pathToModule(input)] = dependencies;
+					}
+				}
+
+				for (const file of res.outputFiles) {
+
+					let contents = file.contents;
+					// 3 TODO this seems to break the build
+					if (false && file.path.endsWith('.js')) {
+						const newText = bundle.removeDuplicateTSBoilerplate(file.text, []);
+						contents = Buffer.from(newText);
+					}
+
+					files.push(new VinylFile({
+						contents: Buffer.from(contents),
+						path: file.path,
+						base: path.join(REPO_ROOT_PATH, opts.src)
+					}));
+				}
+			});
+
+			// await task; // FORCE serial bundling (makes debugging easier)
+			tasks.push(task);
+		}
+
+		await Promise.all(tasks);
+		return { files, bundleData };
+	};
+
+	bundleAsync().then((output) => {
+
+		// bundle output (JS, CSS, SVG...)
+		es.readArray(output.files).pipe(bundlesStream);
+
+		// bundeInfo.json
+		const bundleInfoArray: VinylFile[] = [];
+		if (typeof output.bundleData === 'object') {
+			bundleInfoArray.push(new VinylFile({
+				path: 'bundleInfo.json',
+				base: '.',
+				contents: Buffer.from(JSON.stringify(output.bundleData, null, '\t'))
+			}));
+		}
+		es.readArray(bundleInfoArray).pipe(bundleInfoStream);
+
+		// forward all resources
+		gulp.src(opts.resources, { base: `${opts.src}`, allowEmpty: true }).pipe(resourcesStream);
+	});
+
+	const result = es.merge(
+		bundlesStream,
+		resourcesStream,
+		bundlesStream
+	);
+
+	return result
+		.pipe(sourcemaps.write('./', {
+			sourceRoot: undefined,
+			addComment: true,
+			includeContent: true
+		}))
+		.pipe(opts.languages && opts.languages.length ? processNlsFiles({
+			out: opts.src,
+			fileHeader: bundledFileHeader,
+			languages: opts.languages
+		}) : es.through());
+}
+
 export interface IOptimizeCommonJSTaskOpts {
 	/**
 	 * The paths to consider for optimizing.
@@ -358,11 +505,19 @@ export interface IOptimizeTaskOpts {
 	manual?: IOptimizeManualTaskOpts[];
 }
 
+const isESM = true;
+
 export function optimizeTask(opts: IOptimizeTaskOpts): () => NodeJS.ReadWriteStream {
 	return function () {
-		const optimizers = [optimizeAMDTask(opts.amd)];
-		if (opts.commonJS) {
-			optimizers.push(optimizeCommonJSTask(opts.commonJS));
+		const optimizers: NodeJS.ReadWriteStream[] = [];
+		if (isESM) {
+			optimizers.push(optimizeESMTask(opts.amd, opts.commonJS));
+		} else {
+			optimizers.push(optimizeAMDTask(opts.amd));
+
+			if (opts.commonJS) {
+				optimizers.push(optimizeCommonJSTask(opts.commonJS));
+			}
 		}
 
 		if (opts.manual) {
